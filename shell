@@ -1,0 +1,89 @@
+#include <stdio.h> 
+#include <stdlib.h> 
+#include <unistd.h> 
+#include <assert.h>
+#include <time.h>  
+#include <signal.h>
+
+#include <sys/types.h> 
+#include <sys/wait.h> 
+#include "parse.h"
+
+#define MAX_ARGV_SIZE 50
+#define BUFSIZE 128
+
+int main() 
+{  
+  enum cmd_pos pos;
+  int com_pipe[2][2];
+  char* argv[MAX_ARGV_SIZE];
+  int status, i = 0;
+  static int n = 0;
+  static char buf[BUFSIZ];
+  static char *str = buf;
+  
+//read from buffer
+  if (n == 0) {  /* buffer is empty */
+    n = read(0, buf, sizeof(buf));
+    str = buf;
+  }
+  return (--n >= 0) ? (unsigned char) *str++ : EOF;
+  
+ 
+  do {
+    pos = next_command(str, argv);
+   
+    /*Handle communication!*/
+    com_pipe[0][0] = com_pipe[1][0]; 
+    com_pipe[0][1] = com_pipe[1][1]; 
+
+
+    pid_t pid= fork();    
+    if (pid == 0) {
+      /* handle info */ 
+      if (pos == first) {
+  dup2(com_pipe[1][1], STDOUT_FILENO);
+      } else if (pos == middle) {
+	dup2(com_pipe[1][1],STDOUT_FILENO);
+	dup2(com_pipe[0][0],STDIN_FILENO);
+      } else if (pos == last) {
+	dup2(com_pipe[0][0], STDIN_FILENO);
+      }
+      
+      /*Exec the program*/
+      execvp(argv[0], argv);
+
+      /*Remember to close all pipes!*/
+      close(com_pipe[0][0]);
+      close(com_pipe[0][1]);
+      close(com_pipe[1][0]);
+      close(com_pipe[1][1]);
+
+      /* Error*/
+    } else if (pid < 0) {
+      printf("Can't create child!");
+      
+      //In the parent, pid>0, pos == last && single
+    } else { 
+	break;
+    } 
+    i++;
+    
+  } while(pos != single && pos != last);
+  
+  
+  //wait for all children!
+  while(i >= 0){
+    pid_t pid = wait(&status);
+    //felhantering
+    if (i < 0) {
+	printf("wait error");
+	exit(EXIT_FAILURE);
+      }
+    i--;
+  }
+
+  return 0;
+}
+
+
